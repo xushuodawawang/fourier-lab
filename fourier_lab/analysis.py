@@ -93,7 +93,7 @@ def fourier_series_demo(terms: int = 6) -> dict[str, object]:
         "amplitudes": _pack(amplitudes),
         "mse": round(mse, 5),
         "gibbs_peak": round(gibbs, 5),
-        "summary": f"{terms} 项奇次谐波正在逼近方波，谱线仍然只落在离散频点上。",
+        "summary": f"使用 {terms} 项奇次谐波逼近方波，边缘附近仍能看到典型的 Gibbs 现象。",
     }
 
 
@@ -128,7 +128,7 @@ def series_to_integral_demo(period: float = 16.0) -> dict[str, object]:
         "sampled_amplitude": _pack(sampled_amplitude),
         "spacing": round(float(omega_0), 4),
         "sample_count": int(sampled_omega.size),
-        "summary": "T 变大时，频率间隔缩小，离散谱线会向连续包络靠拢。",
+        "summary": "周期 T 增大时，离散频率点会变得更密，逐渐贴近连续频谱包络。",
     }
 
 
@@ -193,7 +193,7 @@ def transform_demo(
         "snr_before": round(float(snr_before), 3),
         "snr_after": round(float(snr_after), 3),
         "improvement": round(float(snr_after - snr_before), 3),
-        "summary": "频域先定位噪声，再做滤波，最后逆变换回时域。",
+        "summary": "先在频域定位噪声，再进行滤波，最后逆变换回到时域。",
     }
 
 
@@ -225,7 +225,7 @@ def image_demo(
         summary = f"高通模式，噪声强度 {noise_level:.2f}，更适合观察边缘和高频细节。"
     else:
         mask = spectral_radius <= cutoff
-        summary = f"低通模式，噪声强度 {noise_level:.2f}，更适合演示轮廓保留和降噪。"
+        summary = f"低通模式，噪声强度 {noise_level:.2f}，更适合演示降噪与轮廓保留。"
 
     filtered_shifted = shifted * mask[..., None]
     filtered = np.fft.ifft2(np.fft.ifftshift(filtered_shifted, axes=(0, 1)), axes=(0, 1)).real
@@ -253,7 +253,7 @@ def quiz_questions() -> list[dict[str, object]]:
             "prompt": "傅里叶级数最直接适用于哪类信号？",
             "options": ["周期信号", "随机噪声", "任意图像", "非周期脉冲"],
             "answer": 0,
-            "explanation": "傅里叶级数针对周期展开，频域表现为离散谱线。",
+            "explanation": "傅里叶级数用于周期展开，频域上表现为离散谱线。",
         },
         {
             "prompt": "当 T 变大时，ω₀ 会怎样？",

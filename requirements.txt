@@ -1,7 +1,4 @@
-fastapi
-uvicorn
-jinja2
+streamlit
+plotly
 numpy
-scipy
 pillow
-

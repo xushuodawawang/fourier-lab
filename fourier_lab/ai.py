@@ -28,11 +28,26 @@ def _read_env_file() -> dict[str, str]:
     return values
 
 
+def _read_streamlit_secret(name: str) -> str | None:
+    try:
+        import streamlit as st
+
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:
+        return None
+    return None
+
+
 _ENV_CACHE = _read_env_file()
 
 
 def _env(name: str, default: str | None = None) -> str | None:
-    return os.getenv(name) or _ENV_CACHE.get(name) or default
+    return os.getenv(name) or _ENV_CACHE.get(name) or _read_streamlit_secret(name) or default
+
+
+def has_ai_credentials() -> bool:
+    return bool(_env("DASHSCOPE_API_KEY"))
 
 
 def _format_context(context: dict[str, Any]) -> str:
@@ -75,18 +90,17 @@ def _extract_text(payload: dict[str, Any]) -> str:
 def ask_ai_tutor(question: str, module: str = "general", context: dict[str, Any] | None = None) -> str:
     api_key = _env("DASHSCOPE_API_KEY")
     if not api_key:
-        raise RuntimeError("未在 .env 中找到 DASHSCOPE_API_KEY。")
+        raise RuntimeError("未找到 DASHSCOPE_API_KEY，请在 .env 或 Streamlit secrets 中配置。")
 
     endpoint = _env("DASHSCOPE_CHAT_URL", DEFAULT_URL)
     model = _env("DASHSCOPE_MODEL", DEFAULT_MODEL)
     context_block = _format_context(context or {})
 
     system_prompt = (
-        "你是 Fourier Blue Lab 的内置 AI 助教。"
-        "你的任务是帮助本科生理解傅里叶级数、傅里叶积分、傅里叶变换、频域滤波和图像加噪实验。"
-        "回答要求简洁、准确、面向课堂演示；优先结合用户当前实验参数来解释。"
-        "如果用户 asking for steps，就直接给步骤；如果 asking for concept，就先给结论再解释。"
-        "不要编造未提供的数据。"
+        "你是 fourier-lab 的 AI 助教。"
+        "请围绕傅里叶级数、傅里叶积分、傅里叶变换、频域滤波和图像降噪进行讲解。"
+        "回答要简洁、准确、适合课堂演示。"
+        "优先结合用户当前实验参数给出解释，不要编造未提供的数据。"
     )
 
     user_prompt = (
