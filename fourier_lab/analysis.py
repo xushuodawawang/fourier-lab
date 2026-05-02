@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import base64
 import io
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 TAU = 2.0 * np.pi
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DEMO_IMAGE_PATH = ROOT_DIR / "image.png"
+IMAGE_SIZE = 256
+RESAMPLE = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
 
 
 def _pack(values: Iterable[float], digits: int = 6) -> list[float]:
@@ -26,11 +31,45 @@ def _normalize(values: np.ndarray) -> np.ndarray:
 
 def _image_data_uri(values: np.ndarray) -> str:
     clipped = np.clip(values, 0.0, 1.0)
-    image = Image.fromarray(np.uint8(clipped * 255.0), mode="L").convert("RGB")
+    if clipped.ndim == 2:
+        image = Image.fromarray(np.uint8(clipped * 255.0), mode="L").convert("RGB")
+    else:
+        image = Image.fromarray(np.uint8(clipped * 255.0), mode="RGB")
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     payload = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{payload}"
+
+
+def _fallback_demo_image(size: int) -> np.ndarray:
+    y, x = np.mgrid[-1.0:1.0:complex(0, size), -1.0:1.0:complex(0, size)]
+    crest = np.exp(-4.5 * (x**2 + y**2))
+    ridges = 0.25 * np.sin(12.0 * x) + 0.18 * np.cos(15.0 * y)
+    halo = 0.15 * np.exp(-70.0 * (np.sqrt(x**2 + y**2) - 0.58) ** 2)
+    base = _normalize(0.6 * crest + ridges + halo)
+    rgb = np.stack(
+        (
+            0.85 * base + 0.15,
+            0.92 * base + 0.08,
+            np.ones_like(base),
+        ),
+        axis=-1,
+    )
+    return np.clip(rgb, 0.0, 1.0)
+
+
+def _load_demo_image(size: int = IMAGE_SIZE) -> np.ndarray:
+    if not DEMO_IMAGE_PATH.exists():
+        return _fallback_demo_image(size)
+
+    with Image.open(DEMO_IMAGE_PATH) as source:
+        image = source.convert("RGB")
+
+    canvas = Image.new("RGB", (size, size), color=(255, 255, 255))
+    contained = ImageOps.contain(image, (size - 20, size - 20), method=RESAMPLE)
+    offset = ((size - contained.width) // 2, (size - contained.height) // 2)
+    canvas.paste(contained, offset)
+    return np.asarray(canvas, dtype=float) / 255.0
 
 
 def fourier_series_demo(terms: int = 6) -> dict[str, object]:
@@ -54,7 +93,7 @@ def fourier_series_demo(terms: int = 6) -> dict[str, object]:
         "amplitudes": _pack(amplitudes),
         "mse": round(mse, 5),
         "gibbs_peak": round(gibbs, 5),
-        "summary": f"当前使用 {terms} 个奇次谐波，离散频谱只出现在 n=1,3,5... 这些谱线上。",
+        "summary": f"{terms} 项奇次谐波正在逼近方波，谱线仍然只落在离散频点上。",
     }
 
 
@@ -89,7 +128,7 @@ def series_to_integral_demo(period: float = 16.0) -> dict[str, object]:
         "sampled_amplitude": _pack(sampled_amplitude),
         "spacing": round(float(omega_0), 4),
         "sample_count": int(sampled_omega.size),
-        "summary": "周期越大，基波间隔越小，离散谱线就越密，最终逼近连续频谱包络。",
+        "summary": "T 变大时，频率间隔缩小，离散谱线会向连续包络靠拢。",
     }
 
 
@@ -154,37 +193,47 @@ def transform_demo(
         "snr_before": round(float(snr_before), 3),
         "snr_after": round(float(snr_after), 3),
         "improvement": round(float(snr_after - snr_before), 3),
-        "summary": "先做傅里叶变换找到噪声主要聚集的频带，再用滤波器处理，最后逆变换回时域。",
+        "summary": "频域先定位噪声，再做滤波，最后逆变换回时域。",
     }
 
 
-def image_demo(filter_mode: str = "lowpass", cutoff: int = 26) -> dict[str, object]:
-    size = 256
+def image_demo(
+    filter_mode: str = "lowpass",
+    cutoff: int = 40,
+    noise_level: float = 0.16,
+) -> dict[str, object]:
+    clean = _load_demo_image()
+    size = clean.shape[0]
     rng = np.random.default_rng(11)
 
-    y, x = np.mgrid[-1.0:1.0:complex(0, size), -1.0:1.0:complex(0, size)]
-    radius = np.sqrt((x + 0.16) ** 2 + (y - 0.08) ** 2)
-    gradient = 0.16 * (x + y + 2.0)
-    center_blob = 0.58 * np.exp(-4.1 * (x**2 + y**2))
-    ring = 0.35 * np.exp(-95.0 * (radius - 0.42) ** 2)
-    ridges = 0.14 * np.sin(17.0 * x) + 0.12 * np.cos(19.0 * y)
-    checker = 0.1 * (np.sign(np.sin(11.0 * x) * np.cos(11.0 * y)) + 1.0)
+    gaussian_noise = rng.normal(loc=0.0, scale=noise_level, size=clean.shape)
+    noisy = np.clip(clean + gaussian_noise, 0.0, 1.0)
 
-    clean = _normalize(gradient + center_blob + ring + ridges + checker)
-    noisy = np.clip(clean + 0.18 * rng.normal(size=(size, size)), 0.0, 1.0)
+    impulse_ratio = min(0.04, noise_level * 0.1)
+    impulse_map = rng.random((size, size))
+    salt_mask = impulse_map < impulse_ratio
+    pepper_mask = (impulse_map >= impulse_ratio) & (impulse_map < impulse_ratio * 1.8)
+    noisy[salt_mask] = 1.0
+    noisy[pepper_mask] = 0.0
 
-    shifted = np.fft.fftshift(np.fft.fft2(noisy))
+    shifted = np.fft.fftshift(np.fft.fft2(noisy, axes=(0, 1)), axes=(0, 1))
     yy, xx = np.indices((size, size))
     spectral_radius = np.sqrt((xx - size / 2.0) ** 2 + (yy - size / 2.0) ** 2)
 
     if filter_mode == "highpass":
         mask = spectral_radius >= cutoff
+        summary = f"高通模式，噪声强度 {noise_level:.2f}，更适合观察边缘和高频细节。"
     else:
         mask = spectral_radius <= cutoff
+        summary = f"低通模式，噪声强度 {noise_level:.2f}，更适合演示轮廓保留和降噪。"
 
-    filtered = np.fft.ifft2(np.fft.ifftshift(shifted * mask)).real
-    filtered = _normalize(filtered)
-    spectrum_view = _normalize(np.log1p(np.abs(shifted)))
+    filtered_shifted = shifted * mask[..., None]
+    filtered = np.fft.ifft2(np.fft.ifftshift(filtered_shifted, axes=(0, 1)), axes=(0, 1)).real
+    filtered = np.clip(filtered, 0.0, 1.0)
+
+    spectrum_view = _normalize(np.log1p(np.mean(np.abs(shifted), axis=2)))
+    mse_before = float(np.mean((noisy - clean) ** 2))
+    mse_after = float(np.mean((filtered - clean) ** 2))
 
     return {
         "clean": _image_data_uri(clean),
@@ -192,28 +241,30 @@ def image_demo(filter_mode: str = "lowpass", cutoff: int = 26) -> dict[str, obje
         "spectrum": _image_data_uri(spectrum_view),
         "filtered": _image_data_uri(filtered),
         "retained_ratio": round(float(np.mean(mask) * 100.0), 2),
-        "summary": "低频保留轮廓与大结构，高频更偏向边缘、纹理和噪声，因此频域操作很适合做图像增强与降噪。",
+        "mse_before": round(mse_before, 5),
+        "mse_after": round(mse_after, 5),
+        "summary": summary,
     }
 
 
 def quiz_questions() -> list[dict[str, object]]:
     return [
         {
-            "prompt": "傅里叶级数最直接适用于哪一类信号？",
-            "options": ["周期信号", "任意有限长信号", "所有随机噪声信号", "仅图像信号"],
+            "prompt": "傅里叶级数最直接适用于哪类信号？",
+            "options": ["周期信号", "随机噪声", "任意图像", "非周期脉冲"],
             "answer": 0,
-            "explanation": "傅里叶级数强调周期展开，频域对应离散谱线。",
+            "explanation": "傅里叶级数针对周期展开，频域表现为离散谱线。",
         },
         {
-            "prompt": "当周期 T 趋向无穷大时，基波间隔 ω₀ 会怎样变化？",
-            "options": ["保持不变", "逐渐增大", "逐渐趋近于 0", "先减小后增大"],
+            "prompt": "当 T 变大时，ω₀ 会怎样？",
+            "options": ["不变", "变大", "趋近 0", "先小后大"],
             "answer": 2,
-            "explanation": "ω₀ = 2π/T，周期越大，频率采样间隔越小。",
+            "explanation": "ω₀ = 2π/T，周期越大，频率间隔越小。",
         },
         {
-            "prompt": "在图像降噪场景中，常见操作更接近哪一种频域处理？",
-            "options": ["增强全部高频", "保留主要低频并抑制部分高频", "删除全部低频", "只保留单个频率点"],
+            "prompt": "图像降噪通常更接近哪种处理？",
+            "options": ["全部增强高频", "保低频抑高频", "删除全部低频", "只保留单频点"],
             "answer": 1,
-            "explanation": "低频更多承载整体轮廓，高频常包含细节与噪声，所以降噪常通过低通或带通实现。",
+            "explanation": "低频负责整体结构，高频更容易包含细节和噪声。",
         },
     ]

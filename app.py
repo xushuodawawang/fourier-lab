@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Literal
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
 
+from fourier_lab.ai import ask_ai_tutor
 from fourier_lab.analysis import (
     fourier_series_demo,
     image_demo,
@@ -17,18 +20,27 @@ from fourier_lab.analysis import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Fourier Blue Lab", version="1.0.0")
+app = FastAPI(title="Fourier Blue Lab", version="2.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
+class AIChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    module: Literal["general", "series", "transition", "transform", "image"] = "general"
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    context = {
-        "request": request,
-        "quiz_questions": quiz_questions(),
-    }
-    return templates.TemplateResponse(request, "index.html", context)
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "request": request,
+            "quiz_questions": quiz_questions(),
+        },
+    )
 
 
 @app.get("/api/series")
@@ -54,9 +66,26 @@ async def api_transform(
 @app.get("/api/image-demo")
 async def api_image_demo(
     mode: str = Query("lowpass", pattern="^(lowpass|highpass)$"),
-    cutoff: int = Query(26, ge=6, le=96),
+    cutoff: int = Query(40, ge=6, le=96),
+    noise: float = Query(0.16, ge=0.0, le=0.32),
 ) -> dict[str, object]:
-    return image_demo(mode, cutoff)
+    return image_demo(mode, cutoff, noise)
+
+
+@app.post("/api/ai/chat")
+async def api_ai_chat(payload: AIChatRequest) -> dict[str, str]:
+    try:
+        answer = ask_ai_tutor(
+            question=payload.question,
+            module=payload.module,
+            context=payload.context,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive path
+        raise HTTPException(status_code=500, detail=f"AI 服务调用失败：{exc}") from exc
+
+    return {"answer": answer}
 
 
 if __name__ == "__main__":
