@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fourier Blue Lab</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <nav class="topbar">
+                <div class="brand">
+                    <span class="brand-mark">F</span>
+                    <div>
+                        <p class="eyebrow">Python + Web Teaching Studio</p>
+                        <h1>Fourier Blue Lab</h1>
+                    </div>
+                </div>
+                <div class="hero-pills">
+                    <span>级数</span>
+                    <span>积分</span>
+                    <span>变换</span>
+                    <span>AI案例</span>
+                </div>
+            </nav>
+
+            <div class="hero-grid">
+                <section class="hero-copy glass">
+                    <p class="section-tag">交互式教学原型</p>
+                    <h2>把“傅里叶级数 → 傅里叶积分 → 傅里叶变换”做成可以直接演示的实验网页</h2>
+                    <p class="hero-text">
+                        这个原型不依赖 Manim，而是把教案中的核心教学逻辑改造成前后端联动的 Web 实验站：
+                        学生可以拖动参数，直接看到谐波叠加、离散谱变连续谱、FFT 滤波和图像频域处理的结果。
+                    </p>
+                    <div class="hero-actions">
+                        <a class="button primary" href="#series-lab">进入实验</a>
+                        <a class="button ghost" href="#quiz-zone">课堂检测</a>
+                    </div>
+                </section>
+
+                <section class="hero-panel glass">
+                    <div class="metric">
+                        <span class="metric-label">主线</span>
+                        <strong>周期有限 → 周期无穷 → 通用映射</strong>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">风格</span>
+                        <strong>蓝色渐变 + 玻璃卡片 + 动态数据面板</strong>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">课堂价值</span>
+                        <strong>从公式背诵升级为可视化实验与工程联想</strong>
+                    </div>
+                </section>
+            </div>
+        </header>
+
+        <main class="content">
+            <section class="flow-strip">
+                <article class="flow-card">
+                    <span>01</span>
+                    <h3>傅里叶级数</h3>
+                    <p>用有限项奇次谐波逼近周期方波，看到离散谱线。</p>
+                </article>
+                <article class="flow-card">
+                    <span>02</span>
+                    <h3>级数到积分</h3>
+                    <p>增大周期，观察频率间隔收缩，谱线逐渐织成连续包络。</p>
+                </article>
+                <article class="flow-card">
+                    <span>03</span>
+                    <h3>傅里叶变换</h3>
+                    <p>对非周期信号做 FFT、滤波与逆变换，建立工程直觉。</p>
+                </article>
+                <article class="flow-card">
+                    <span>04</span>
+                    <h3>AI案例</h3>
+                    <p>图像频域降噪与传感器滤波，连接 AI 与电子信息应用场景。</p>
+                </article>
+            </section>
+
+            <section id="series-lab" class="lab-section glass">
+                <div class="section-heading">
+                    <div>
+                        <p class="section-tag">模块一</p>
+                        <h2>傅里叶级数复盘</h2>
+                    </div>
+                    <p class="section-note">拖动谐波数量，感受“周期信号 ↔ 离散频谱”的对应关系。</p>
+                </div>
+
+                <div class="control-row">
+                    <label class="control-card">
+                        <span>奇次谐波数量</span>
+                        <strong id="series-terms-value">6 项</strong>
+                        <input id="series-terms" type="range" min="1" max="12" value="6">
+                    </label>
+                    <div class="insight-card">
+                        <span>均方误差</span>
+                        <strong id="series-mse">-</strong>
+                    </div>
+                    <div class="insight-card">
+                        <span>Gibbs 超调</span>
+                        <strong id="series-gibbs">-</strong>
+                    </div>
+                    <div class="insight-card wide">
+                        <span>教学提示</span>
+                        <strong id="series-summary">-</strong>
+                    </div>
+                </div>
+
+                <div class="chart-grid two">
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>周期方波与谐波逼近</h3>
+                            <span>时域</span>
+                        </div>
+                        <canvas id="series-wave-chart"></canvas>
+                    </article>
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>离散频谱</h3>
+                            <span>频域</span>
+                        </div>
+                        <canvas id="series-spectrum-chart"></canvas>
+                    </article>
+                </div>
+            </section>
+
+            <section class="lab-section glass">
+                <div class="section-heading">
+                    <div>
+                        <p class="section-tag">模块二</p>
+                        <h2>傅里叶级数到傅里叶积分</h2>
+                    </div>
+                    <p class="section-note">增大周期 T，让谱线间隔 ω₀ = 2π/T 变小，观察离散谱向连续谱过渡。</p>
+                </div>
+
+                <div class="control-row">
+                    <label class="control-card">
+                        <span>周期 T</span>
+                        <strong id="transition-period-value">16.0</strong>
+                        <input id="transition-period" type="range" min="6" max="28" step="0.5" value="16">
+                    </label>
+                    <div class="insight-card">
+                        <span>基波间隔 ω₀</span>
+                        <strong id="transition-spacing">-</strong>
+                    </div>
+                    <div class="insight-card">
+                        <span>当前谱线数量</span>
+                        <strong id="transition-count">-</strong>
+                    </div>
+                    <div class="insight-card wide">
+                        <span>逻辑摘要</span>
+                        <strong id="transition-summary">-</strong>
+                    </div>
+                </div>
+
+                <div class="chart-grid two">
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>周期延拓后的时域形态</h3>
+                            <span>时域</span>
+                        </div>
+                        <canvas id="transition-time-chart"></canvas>
+                    </article>
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>离散谱线逼近连续包络</h3>
+                            <span>频域</span>
+                        </div>
+                        <canvas id="transition-spectrum-chart"></canvas>
+                    </article>
+                </div>
+            </section>
+
+            <section class="lab-section glass">
+                <div class="section-heading">
+                    <div>
+                        <p class="section-tag">模块三</p>
+                        <h2>傅里叶变换与工程滤波</h2>
+                    </div>
+                    <p class="section-note">选不同信号和滤波策略，看噪声如何在频域被定位、抑制，再逆变换回时域。</p>
+                </div>
+
+                <div class="control-grid">
+                    <label class="control-card">
+                        <span>信号类型</span>
+                        <select id="transform-signal">
+                            <option value="sensor">传感器波形</option>
+                            <option value="pulse">衰减脉冲</option>
+                            <option value="chirp">扫频信号</option>
+                        </select>
+                    </label>
+                    <label class="control-card">
+                        <span>滤波模式</span>
+                        <select id="transform-mode">
+                            <option value="lowpass">低通</option>
+                            <option value="highpass">高通</option>
+                            <option value="bandpass">带通</option>
+                        </select>
+                    </label>
+                    <label class="control-card">
+                        <span>噪声强度</span>
+                        <strong id="transform-noise-value">0.40</strong>
+                        <input id="transform-noise" type="range" min="0" max="1.2" step="0.05" value="0.4">
+                    </label>
+                    <label class="control-card">
+                        <span>截止频率</span>
+                        <strong id="transform-cutoff-value">1.80 Hz</strong>
+                        <input id="transform-cutoff" type="range" min="0.2" max="5.5" step="0.1" value="1.8">
+                    </label>
+                </div>
+
+                <div class="control-row compact">
+                    <div class="insight-card">
+                        <span>SNR 前</span>
+                        <strong id="transform-snr-before">-</strong>
+                    </div>
+                    <div class="insight-card">
+                        <span>SNR 后</span>
+                        <strong id="transform-snr-after">-</strong>
+                    </div>
+                    <div class="insight-card">
+                        <span>提升</span>
+                        <strong id="transform-improvement">-</strong>
+                    </div>
+                    <div class="insight-card wide">
+                        <span>工程说明</span>
+                        <strong id="transform-summary">-</strong>
+                    </div>
+                </div>
+
+                <div class="chart-grid two">
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>时域信号</h3>
+                            <span>原始 / 含噪 / 滤波后</span>
+                        </div>
+                        <canvas id="transform-time-chart"></canvas>
+                    </article>
+                    <article class="chart-card">
+                        <div class="chart-head">
+                            <h3>频域能量</h3>
+                            <span>滤波前后</span>
+                        </div>
+                        <canvas id="transform-spectrum-chart"></canvas>
+                    </article>
+                </div>
+            </section>
+
+            <section class="lab-section glass">
+                <div class="section-heading">
+                    <div>
+                        <p class="section-tag">模块四</p>
+                        <h2>AI 图像频域实验</h2>
+                    </div>
+                    <p class="section-note">用一张合成图像展示空域与频域之间的转换，把“高频是细节/噪声，低频是轮廓/结构”讲清楚。</p>
+                </div>
+
+                <div class="control-grid">
+                    <label class="control-card">
+                        <span>图像滤波模式</span>
+                        <select id="image-mode">
+                            <option value="lowpass">低通保轮廓</option>
+                            <option value="highpass">高通看边缘</option>
+                        </select>
+                    </label>
+                    <label class="control-card">
+                        <span>频域半径</span>
+                        <strong id="image-cutoff-value">26</strong>
+                        <input id="image-cutoff" type="range" min="6" max="96" step="2" value="26">
+                    </label>
+                    <div class="insight-card">
+                        <span>保留频点比例</span>
+                        <strong id="image-retained-ratio">-</strong>
+                    </div>
+                    <div class="insight-card wide">
+                        <span>案例提示</span>
+                        <strong id="image-summary">-</strong>
+                    </div>
+                </div>
+
+                <div class="image-grid">
+                    <figure class="image-card">
+                        <img id="image-clean" alt="原始合成图像">
+                        <figcaption>原始图像</figcaption>
+                    </figure>
+                    <figure class="image-card">
+                        <img id="image-noisy" alt="含噪图像">
+                        <figcaption>含噪输入</figcaption>
+                    </figure>
+                    <figure class="image-card">
+                        <img id="image-spectrum" alt="频谱图">
+                        <figcaption>频域幅值</figcaption>
+                    </figure>
+                    <figure class="image-card">
+                        <img id="image-filtered" alt="滤波结果">
+                        <figcaption>频域处理后</figcaption>
+                    </figure>
+                </div>
+            </section>
+
+            <section id="quiz-zone" class="lab-section glass quiz-zone">
+                <div class="section-heading">
+                    <div>
+                        <p class="section-tag">课堂收束</p>
+                        <h2>AI 随堂检测</h2>
+                    </div>
+                    <p class="section-note">保留教案中的“基础 + 逻辑 + 应用”三层检测结构，用即时反馈强化课堂闭环。</p>
+                </div>
+
+                <div id="quiz-list" class="quiz-list"></div>
+                <div class="quiz-footer">
+                    <button id="quiz-submit" class="button primary" type="button">提交检测</button>
+                    <div class="quiz-result" id="quiz-result">请完成三道题后提交。</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        window.quizQuestions = {{ quiz_questions | tojson }};
+    </script>
+    <script src="{{ url_for('static', path='/js/app.js') }}"></script>
+</body>
+</html>
+
