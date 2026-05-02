@@ -9,7 +9,7 @@ client = TestClient(app)
 def test_index_renders() -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "傅里叶实验台" in response.text
+    assert "fourier-lab" in response.text
     assert "AI 助教" in response.text
 
 

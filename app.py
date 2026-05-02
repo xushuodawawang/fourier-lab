@@ -20,7 +20,7 @@ from fourier_lab.analysis import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-app = FastAPI(title="Fourier Blue Lab", version="2.0.0")
+app = FastAPI(title="fourier-lab", version="2.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
