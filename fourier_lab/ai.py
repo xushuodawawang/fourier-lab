@@ -46,8 +46,19 @@ def _env(name: str, default: str | None = None) -> str | None:
     return os.getenv(name) or _ENV_CACHE.get(name) or _read_streamlit_secret(name) or default
 
 
-def has_ai_credentials() -> bool:
-    return bool(_env("DASHSCOPE_API_KEY"))
+def _clean_explicit(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _resolve_setting(explicit: str | None, env_name: str, default: str | None = None) -> str | None:
+    return _clean_explicit(explicit) or _env(env_name, default)
+
+
+def has_ai_credentials(api_key: str | None = None) -> bool:
+    return bool(_resolve_setting(api_key, "DASHSCOPE_API_KEY"))
 
 
 def _format_context(context: dict[str, Any]) -> str:
@@ -87,43 +98,33 @@ def _extract_text(payload: dict[str, Any]) -> str:
     raise RuntimeError("无法解析千问返回的答案。")
 
 
-def ask_ai_tutor(question: str, module: str = "general", context: dict[str, Any] | None = None) -> str:
-    api_key = _env("DASHSCOPE_API_KEY")
-    if not api_key:
-        raise RuntimeError("未找到 DASHSCOPE_API_KEY，请在 .env 或 Streamlit secrets 中配置。")
+def _request_chat_completion(
+    *,
+    messages: list[dict[str, str]],
+    api_key: str | None = None,
+    model: str | None = None,
+    endpoint: str | None = None,
+    temperature: float = 0.4,
+) -> dict[str, Any]:
+    resolved_api_key = _resolve_setting(api_key, "DASHSCOPE_API_KEY")
+    if not resolved_api_key:
+        raise RuntimeError("未找到 DASHSCOPE_API_KEY，请在页面输入、.env 或 Streamlit secrets 中配置。")
 
-    endpoint = _env("DASHSCOPE_CHAT_URL", DEFAULT_URL)
-    model = _env("DASHSCOPE_MODEL", DEFAULT_MODEL)
-    context_block = _format_context(context or {})
-
-    system_prompt = (
-        "你是 fourier-lab 的 AI 助教。"
-        "请围绕傅里叶级数、傅里叶积分、傅里叶变换、频域滤波和图像降噪进行讲解。"
-        "回答要简洁、准确、适合课堂演示。"
-        "优先结合用户当前实验参数给出解释，不要编造未提供的数据。"
-    )
-
-    user_prompt = (
-        f"当前模块：{module}\n"
-        f"当前实验上下文：\n{context_block}\n\n"
-        f"用户问题：{question}"
-    )
+    resolved_endpoint = _resolve_setting(endpoint, "DASHSCOPE_CHAT_URL", DEFAULT_URL)
+    resolved_model = _resolve_setting(model, "DASHSCOPE_MODEL", DEFAULT_MODEL)
 
     payload = {
-        "model": model,
-        "temperature": 0.4,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "model": resolved_model,
+        "temperature": temperature,
+        "messages": messages,
     }
 
     request = urllib.request.Request(
-        endpoint,
+        resolved_endpoint,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {resolved_api_key}",
         },
         method="POST",
     )
@@ -142,4 +143,60 @@ def ask_ai_tutor(question: str, module: str = "general", context: dict[str, Any]
         message = data["error"].get("message", "未知错误")
         raise RuntimeError(f"千问接口返回错误：{message}")
 
-    return _extract_text(data)
+    return data
+
+
+def ask_ai_tutor(
+    question: str,
+    module: str = "general",
+    context: dict[str, Any] | None = None,
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    endpoint: str | None = None,
+) -> str:
+    context_block = _format_context(context or {})
+
+    system_prompt = (
+        "你是 fourier-lab 的 AI 助教。"
+        "请围绕傅里叶级数、傅里叶积分、傅里叶变换、频域滤波和图像降噪进行讲解。"
+        "回答要简洁、准确、适合课堂演示。"
+        "优先结合用户当前实验参数给出解释，不要编造未提供的数据。"
+    )
+
+    user_prompt = (
+        f"当前模块：{module}\n"
+        f"当前实验上下文：\n{context_block}\n\n"
+        f"用户问题：{question}"
+    )
+
+    payload = _request_chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        api_key=api_key,
+        model=model,
+        endpoint=endpoint,
+        temperature=0.4,
+    )
+    return _extract_text(payload)
+
+
+def test_ai_connection(
+    *,
+    api_key: str | None = None,
+    model: str | None = None,
+    endpoint: str | None = None,
+) -> str:
+    payload = _request_chat_completion(
+        messages=[
+            {"role": "system", "content": "你是一个 API 连通性测试助手。"},
+            {"role": "user", "content": "请只回复：连接成功"},
+        ],
+        api_key=api_key,
+        model=model,
+        endpoint=endpoint,
+        temperature=0.0,
+    )
+    return _extract_text(payload)

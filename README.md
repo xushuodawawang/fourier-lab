@@ -26,7 +26,10 @@ python app.py
 
 1. 将仓库连接到 Streamlit Community Cloud。
 2. Main file path 填 `streamlit_app.py`。
-3. 在应用的 Secrets 中配置：
+3. 你有两种方式连接千问：
+
+第一种：在应用页面左侧边栏直接输入临时 API Key。  
+第二种：在应用的 Secrets 中配置：
 
 ```toml
 DASHSCOPE_API_KEY = "你的千问 API Key"
@@ -48,4 +51,5 @@ python -m pytest
 ## 说明
 
 - 本地图像演示默认读取仓库根目录下的 `image.png`
-- AI 助教优先读取环境变量，其次读取 `.env`，在 Streamlit Cloud 中也支持 `st.secrets`
+- AI 助教优先使用页面输入的 API Key，其次读取环境变量、`.env` 和 `st.secrets`
+- 页面内置“测试 API 连接”按钮，方便确认千问配置是否生效

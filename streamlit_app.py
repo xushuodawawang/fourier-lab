@@ -9,8 +9,14 @@ import plotly.graph_objects as go
 import streamlit as st
 from PIL import Image
 
-from fourier_lab.ai import ask_ai_tutor, has_ai_credentials
-from fourier_lab.analysis import fourier_series_demo, image_demo, quiz_questions, series_to_integral_demo, transform_demo
+from fourier_lab.ai import ask_ai_tutor, has_ai_credentials, test_ai_connection
+from fourier_lab.analysis import (
+    fourier_series_demo,
+    image_demo,
+    quiz_questions,
+    series_to_integral_demo,
+    transform_demo,
+)
 
 
 def inject_styles() -> None:
@@ -126,7 +132,7 @@ def inject_styles() -> None:
             font-weight: 600;
             box-shadow: 0 14px 28px rgba(37, 99, 235, 0.2);
         }
-        .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div, .stNumberInput input {
+        .stTextArea textarea, .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
             border-radius: 16px;
         }
         </style>
@@ -198,6 +204,7 @@ def line_figure(
                 mode=trace.get("mode", "lines"),
                 name=trace["name"],
                 line=dict(color=trace["color"], width=trace.get("width", 3)),
+                marker=dict(size=trace.get("marker_size", 8), color=trace.get("color")),
                 opacity=trace.get("opacity", 1.0),
             )
         )
@@ -253,11 +260,15 @@ def ensure_state() -> None:
         "ai_module": "general",
         "ai_template": "自定义",
         "ai_prompt": "",
+        "runtime_api_key": "",
+        "runtime_model": "",
+        "runtime_endpoint": "",
+        "api_test_status": None,
         "quiz_submitted": False,
         "chat_history": [
             {
                 "role": "assistant",
-                "content": "我是 fourier-lab 的 AI 助教。你可以结合当前实验参数提问，例如“为什么低通滤波后图像更平滑？”",
+                "content": "我是 fourier-lab 的 AI 助教。你可以结合当前实验参数提问，例如“为什么低通滤波后图像会更平滑？”",
             }
         ],
     }
@@ -276,6 +287,17 @@ def current_context() -> dict[str, Any]:
         "image_mode": st.session_state.image_mode,
         "image_cutoff": int(st.session_state.image_cutoff),
         "image_noise": round(float(st.session_state.image_noise), 3),
+    }
+
+
+def runtime_ai_settings() -> dict[str, str | None]:
+    api_key = st.session_state.runtime_api_key.strip()
+    model = st.session_state.runtime_model.strip()
+    endpoint = st.session_state.runtime_endpoint.strip()
+    return {
+        "api_key": api_key or None,
+        "model": model or None,
+        "endpoint": endpoint or None,
     }
 
 
@@ -322,15 +344,48 @@ def render_sidebar() -> None:
     st.sidebar.markdown("## fourier-lab")
     st.sidebar.caption("真正面向 Streamlit 部署的版本")
     st.sidebar.markdown("### 运行状态")
-    if has_ai_credentials():
-        st.sidebar.success("已检测到千问密钥")
+
+    settings = runtime_ai_settings()
+    if has_ai_credentials(settings["api_key"]):
+        st.sidebar.success("已检测到可用的千问密钥")
     else:
-        st.sidebar.warning("未检测到千问密钥")
+        st.sidebar.warning("尚未检测到千问密钥")
+
+    with st.sidebar.expander("API 配置", expanded=False):
+        st.caption("支持直接在页面输入 API Key。当前输入只保存在本次会话，不会写回仓库。")
+        st.text_input(
+            "DashScope API Key",
+            key="runtime_api_key",
+            type="password",
+            placeholder="sk-...",
+            help="留空时会回退到 Streamlit secrets 或本地 .env。",
+        )
+        st.text_input("模型名称", key="runtime_model", placeholder="留空则使用 qwen-plus")
+        st.text_input("接口地址", key="runtime_endpoint", placeholder="留空则使用官方兼容端点")
+
+        if st.button("测试 API 连接", key="test_api_connection_button", use_container_width=True):
+            test_settings = runtime_ai_settings()
+            with st.spinner("正在测试千问 API 连接..."):
+                try:
+                    result = test_ai_connection(**test_settings)
+                except RuntimeError as exc:
+                    st.session_state.api_test_status = {"level": "error", "message": str(exc)}
+                except Exception as exc:  # pragma: no cover - UI defensive path
+                    st.session_state.api_test_status = {"level": "error", "message": f"出现未预期错误：{exc}"}
+                else:
+                    st.session_state.api_test_status = {"level": "success", "message": result}
+
+        status = st.session_state.api_test_status
+        if status:
+            if status["level"] == "success":
+                st.success(f"连接测试成功：{status['message']}")
+            else:
+                st.error(status["message"])
 
     st.sidebar.markdown("### 部署提示")
     st.sidebar.caption("主入口文件：`streamlit_app.py`")
     st.sidebar.caption("本地也可以运行：`python app.py`")
-    st.sidebar.caption("云端请在 Streamlit secrets 中配置 `DASHSCOPE_API_KEY`")
+    st.sidebar.caption("云端可直接在页面输入 Key，也可以在 Streamlit secrets 中配置 `DASHSCOPE_API_KEY`")
 
     with st.sidebar.expander("当前实验上下文", expanded=False):
         st.code(json.dumps(current_context(), ensure_ascii=False, indent=2), language="json")
@@ -391,24 +446,26 @@ def render_transition_tab() -> None:
             ),
             use_container_width=True,
         )
-        envelope_fig = line_figure(
-            "离散谱线向连续包络过渡",
-            [
-                {"name": "连续包络", "x": data["omega"], "y": data["envelope"], "color": "#0ea5e9", "width": 3},
-                {
-                    "name": "离散谱线",
-                    "x": data["sampled_omega"],
-                    "y": data["sampled_amplitude"],
-                    "color": "#1d4ed8",
-                    "mode": "markers",
-                    "width": 0,
-                },
-            ],
-            "ω",
-            "归一化幅值",
+        st.plotly_chart(
+            line_figure(
+                "离散谱线向连续包络过渡",
+                [
+                    {"name": "连续包络", "x": data["omega"], "y": data["envelope"], "color": "#0ea5e9", "width": 3},
+                    {
+                        "name": "离散谱线",
+                        "x": data["sampled_omega"],
+                        "y": data["sampled_amplitude"],
+                        "color": "#1d4ed8",
+                        "mode": "markers",
+                        "marker_size": 9,
+                        "width": 0,
+                    },
+                ],
+                "ω",
+                "归一化幅值",
+            ),
+            use_container_width=True,
         )
-        envelope_fig.update_traces(marker=dict(size=9, color="#1d4ed8"), selector=dict(mode="markers"))
-        st.plotly_chart(envelope_fig, use_container_width=True)
 
 
 def render_transform_tab() -> None:
@@ -553,6 +610,7 @@ def render_ai_tab() -> None:
     with left:
         panel_open()
         st.subheader("AI 助教")
+        st.caption("如果没有配置 `.env`，可以直接在左侧边栏的“API 配置”里输入千问 API Key。")
         st.selectbox(
             "提问模块",
             options=["general", "series", "transition", "transform", "image"],
@@ -580,7 +638,8 @@ def render_ai_tab() -> None:
             st.session_state.ai_prompt = prompt_templates[quick_prompt]
 
         st.text_area("问题", key="ai_prompt", height=140, placeholder="例如：请解释当前图像实验中低通滤波的作用。")
-        disabled = not has_ai_credentials()
+        settings = runtime_ai_settings()
+        disabled = not has_ai_credentials(settings["api_key"])
         if st.button("发送给 AI 助教", use_container_width=True, disabled=disabled):
             question = st.session_state.ai_prompt.strip()
             if not question:
@@ -593,6 +652,9 @@ def render_ai_tab() -> None:
                             question=question,
                             module=st.session_state.ai_module,
                             context=current_context(),
+                            api_key=settings["api_key"],
+                            model=settings["model"],
+                            endpoint=settings["endpoint"],
                         )
                     except RuntimeError as exc:
                         answer = f"调用失败：{exc}"
@@ -602,9 +664,10 @@ def render_ai_tab() -> None:
                 st.session_state.ai_prompt = ""
 
         if disabled:
-            st.warning("未检测到 DASHSCOPE_API_KEY。部署到 Streamlit Cloud 时，请在 Secrets 中配置。")
+            st.warning("还没有可用的 DASHSCOPE_API_KEY。请在侧边栏输入 Key，或在 Streamlit secrets/.env 中配置。")
         with st.expander("发送给 AI 的实验上下文", expanded=False):
             st.code(json.dumps(current_context(), ensure_ascii=False, indent=2), language="json")
+            st.code(json.dumps(runtime_ai_settings(), ensure_ascii=False, indent=2), language="json")
         panel_close()
     with right:
         panel_open()
@@ -618,7 +681,7 @@ def render_ai_tab() -> None:
 def main() -> None:
     st.set_page_config(
         page_title="fourier-lab",
-        page_icon="~",
+        page_icon="f",
         layout="wide",
         initial_sidebar_state="expanded",
     )
@@ -651,6 +714,7 @@ def main() -> None:
         render_quiz_tab()
     with tabs[5]:
         render_ai_tab()
+
 
 if __name__ == "__main__":
     main()
