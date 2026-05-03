@@ -13,6 +13,7 @@ TAU = 2.0 * np.pi
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEMO_IMAGE_PATH = ROOT_DIR / "image.png"
 IMAGE_SIZE = 256
+SURFACE_SAMPLE_SIZE = 72
 RESAMPLE = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
 
 
@@ -27,6 +28,19 @@ def _normalize(values: np.ndarray) -> np.ndarray:
     if maximum - minimum < 1e-12:
         return np.zeros_like(values, dtype=float)
     return (values - minimum) / (maximum - minimum)
+
+
+def _pack_matrix(values: np.ndarray, digits: int = 6) -> list[list[float]]:
+    array = np.asarray(values, dtype=float)
+    rounded = np.round(array, digits)
+    return [[float(item) for item in row] for row in rounded.tolist()]
+
+
+def _downsample_grid(values: np.ndarray, sample_size: int = SURFACE_SAMPLE_SIZE) -> np.ndarray:
+    height, width = values.shape
+    y_index = np.linspace(0, height - 1, min(sample_size, height), dtype=int)
+    x_index = np.linspace(0, width - 1, min(sample_size, width), dtype=int)
+    return values[np.ix_(y_index, x_index)]
 
 
 def _image_data_uri(values: np.ndarray) -> str:
@@ -231,7 +245,9 @@ def image_demo(
     filtered = np.fft.ifft2(np.fft.ifftshift(filtered_shifted, axes=(0, 1)), axes=(0, 1)).real
     filtered = np.clip(filtered, 0.0, 1.0)
 
-    spectrum_view = _normalize(np.log1p(np.mean(np.abs(shifted), axis=2)))
+    spectrum_log = np.log1p(np.mean(np.abs(shifted), axis=2))
+    spectrum_view = _normalize(spectrum_log)
+    spectrum_surface = _downsample_grid(spectrum_view)
     mse_before = float(np.mean((noisy - clean) ** 2))
     mse_after = float(np.mean((filtered - clean) ** 2))
 
@@ -240,6 +256,10 @@ def image_demo(
         "noisy": _image_data_uri(noisy),
         "spectrum": _image_data_uri(spectrum_view),
         "filtered": _image_data_uri(filtered),
+        "spectrum_surface": _pack_matrix(spectrum_surface),
+        "surface_x": list(range(int(spectrum_surface.shape[1]))),
+        "surface_y": list(range(int(spectrum_surface.shape[0]))),
+        "surface_peak": round(float(np.max(spectrum_surface)), 5),
         "retained_ratio": round(float(np.mean(mask) * 100.0), 2),
         "mse_before": round(mse_before, 5),
         "mse_after": round(mse_after, 5),

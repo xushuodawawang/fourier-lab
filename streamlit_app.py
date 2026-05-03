@@ -246,6 +246,42 @@ def bar_figure(title: str, x: list[float], y: list[float], color: str, x_title: 
     return figure
 
 
+def surface_figure(title: str, x: list[int], y: list[int], z: list[list[float]]) -> go.Figure:
+    figure = go.Figure(
+        data=[
+            go.Surface(
+                x=x,
+                y=y,
+                z=z,
+                colorscale=[
+                    [0.0, "#dbeafe"],
+                    [0.2, "#93c5fd"],
+                    [0.45, "#38bdf8"],
+                    [0.7, "#2563eb"],
+                    [1.0, "#0f172a"],
+                ],
+                showscale=False,
+                hovertemplate="x=%{x}<br>y=%{y}<br>强度=%{z:.3f}<extra></extra>",
+            )
+        ]
+    )
+    figure.update_layout(
+        title=title,
+        height=430,
+        margin=dict(l=0, r=0, t=42, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        scene=dict(
+            bgcolor="rgba(255,255,255,0.62)",
+            xaxis=dict(title="频率 x", gridcolor="rgba(148,163,184,0.18)"),
+            yaxis=dict(title="频率 y", gridcolor="rgba(148,163,184,0.18)"),
+            zaxis=dict(title="幅值", gridcolor="rgba(148,163,184,0.18)"),
+            camera=dict(eye=dict(x=1.45, y=1.45, z=0.9)),
+        ),
+        font=dict(color="#0f172a"),
+    )
+    return figure
+
+
 def ensure_state() -> None:
     defaults: dict[str, Any] = {
         "series_terms": 6,
@@ -558,6 +594,7 @@ def render_image_tab() -> None:
         metric_card("Retained", f"{data['retained_ratio']}%", "保留的频域比例")
         metric_card("MSE Before", f"{data['mse_before']}", "加噪后误差")
         metric_card("MSE After", f"{data['mse_after']}", "滤波后误差")
+        metric_card("3D Peak", f"{data['surface_peak']}", "三维频谱峰值")
         panel_close()
     with right:
         data = get_image_data(
@@ -571,6 +608,16 @@ def render_image_tab() -> None:
         top[1].image(decode_data_uri(data["noisy"]), caption="加噪图像", use_container_width=True)
         bottom[0].image(decode_data_uri(data["spectrum"]), caption="频谱视图", use_container_width=True)
         bottom[1].image(decode_data_uri(data["filtered"]), caption="滤波结果", use_container_width=True)
+        st.caption("三维频谱图可以拖拽旋转，用来观察中心低频峰和外围高频分布。")
+        st.plotly_chart(
+            surface_figure(
+                "三维傅里叶频谱曲面",
+                data["surface_x"],
+                data["surface_y"],
+                data["spectrum_surface"],
+            ),
+            use_container_width=True,
+        )
 
 
 def render_quiz_tab() -> None:

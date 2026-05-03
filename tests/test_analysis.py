@@ -33,6 +33,9 @@ def test_image_demo_outputs_data_uris() -> None:
     assert data["clean"].startswith("data:image/png;base64,")
     assert data["filtered"].startswith("data:image/png;base64,")
     assert data["retained_ratio"] > 0
+    assert len(data["surface_x"]) == len(data["spectrum_surface"][0])
+    assert len(data["surface_y"]) == len(data["spectrum_surface"])
+    assert data["surface_peak"] >= 0
 
 
 def test_quiz_questions_have_expected_shape() -> None:
