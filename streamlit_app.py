@@ -5,6 +5,7 @@ import io
 import json
 from typing import Any
 
+import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from PIL import Image
@@ -282,6 +283,63 @@ def surface_figure(title: str, x: list[int], y: list[int], z: list[list[float]])
     return figure
 
 
+def stacked_3d_lines_figure(
+    title: str,
+    traces: list[dict[str, Any]],
+    x_title: str,
+    y_title: str,
+    z_title: str,
+    height: int = 430,
+) -> go.Figure:
+    figure = go.Figure()
+    tickvals: list[float] = []
+    ticktext: list[str] = []
+
+    for index, trace in enumerate(traces):
+        plane = float(trace.get("plane", index))
+        if plane not in tickvals:
+            tickvals.append(plane)
+            ticktext.append(trace["name"])
+
+        x_values = trace["x"]
+        z_values = trace["z"]
+        figure.add_trace(
+            go.Scatter3d(
+                x=x_values,
+                y=[plane] * len(x_values),
+                z=z_values,
+                mode=trace.get("mode", "lines"),
+                name=trace["name"],
+                line=dict(color=trace["color"], width=trace.get("width", 6)),
+                marker=dict(size=trace.get("marker_size", 3), color=trace["color"]),
+                opacity=trace.get("opacity", 1.0),
+            )
+        )
+
+    figure.update_layout(
+        title=title,
+        height=height,
+        margin=dict(l=0, r=0, t=42, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1.0),
+        scene=dict(
+            bgcolor="rgba(255,255,255,0.62)",
+            xaxis=dict(title=x_title, gridcolor="rgba(148,163,184,0.18)"),
+            yaxis=dict(
+                title=y_title,
+                gridcolor="rgba(148,163,184,0.18)",
+                tickmode="array",
+                tickvals=tickvals,
+                ticktext=ticktext,
+            ),
+            zaxis=dict(title=z_title, gridcolor="rgba(148,163,184,0.18)"),
+            camera=dict(eye=dict(x=1.4, y=1.35, z=0.95)),
+        ),
+        font=dict(color="#0f172a"),
+    )
+    return figure
+
+
 def ensure_state() -> None:
     defaults: dict[str, Any] = {
         "series_terms": 6,
@@ -441,20 +499,45 @@ def render_series_tab() -> None:
         panel_close()
     with right:
         data = get_series_data(st.session_state.series_terms)
+        x = np.asarray(data["x"], dtype=float)
+        palette = ["#38bdf8", "#0ea5e9", "#2563eb", "#1d4ed8", "#4338ca", "#0f172a"]
+        harmonic_traces: list[dict[str, Any]] = []
+        for index, (harmonic, amplitude) in enumerate(zip(data["harmonics"], data["amplitudes"])):
+            harmonic_traces.append(
+                {
+                    "name": f"H{harmonic}",
+                    "x": data["x"],
+                    "z": (amplitude * np.sin(harmonic * x)).tolist(),
+                    "plane": harmonic,
+                    "color": palette[index % len(palette)],
+                    "width": 4,
+                }
+            )
+
         st.plotly_chart(
-            line_figure(
-                "方波与级数逼近",
+            stacked_3d_lines_figure(
+                "3D 方波与级数逼近",
                 [
-                    {"name": "目标方波", "x": data["x"], "y": data["target"], "color": "#0f172a", "width": 2.4},
-                    {"name": "级数逼近", "x": data["x"], "y": data["approximation"], "color": "#2563eb", "width": 3.2},
+                    {"name": "目标方波", "x": data["x"], "z": data["target"], "plane": 0, "color": "#0f172a", "width": 5},
+                    {"name": "级数逼近", "x": data["x"], "z": data["approximation"], "plane": 1, "color": "#2563eb", "width": 6},
                 ],
                 "t",
+                "图层",
                 "幅值",
+                height=360,
             ),
             use_container_width=True,
         )
+        st.caption("这里已经改成三维主图。拖拽图形可以从不同角度观察理想方波和傅里叶逼近之间的差异。")
         st.plotly_chart(
-            bar_figure("谐波幅值", data["harmonics"], data["amplitudes"], "#38bdf8", "谐波序号", "幅值"),
+            stacked_3d_lines_figure(
+                "3D 谐波瀑布图",
+                harmonic_traces,
+                "t",
+                "谐波序号",
+                "分量幅值",
+                height=420,
+            ),
             use_container_width=True,
         )
 
@@ -542,28 +625,33 @@ def render_transform_tab() -> None:
             float(st.session_state.transform_cutoff),
             st.session_state.transform_mode,
         )
+        mask_scale = max(data["spectrum"]) * 0.35 if data["spectrum"] else 0.0
         st.plotly_chart(
-            line_figure(
-                "时域信号",
+            stacked_3d_lines_figure(
+                "3D 时域信号",
                 [
-                    {"name": "原始信号", "x": data["time_x"], "y": data["clean"], "color": "#0f172a", "width": 2.2},
-                    {"name": "带噪信号", "x": data["time_x"], "y": data["noisy"], "color": "#38bdf8", "width": 1.8, "opacity": 0.86},
-                    {"name": "滤波结果", "x": data["time_x"], "y": data["filtered"], "color": "#1d4ed8", "width": 3.0},
+                    {"name": "原始信号", "x": data["time_x"], "z": data["clean"], "plane": 0, "color": "#0f172a", "width": 5},
+                    {"name": "带噪信号", "x": data["time_x"], "z": data["noisy"], "plane": 1, "color": "#38bdf8", "width": 4, "opacity": 0.86},
+                    {"name": "滤波结果", "x": data["time_x"], "z": data["filtered"], "plane": 2, "color": "#1d4ed8", "width": 6},
                 ],
                 "t",
+                "信号层",
                 "幅值",
                 height=340,
             ),
             use_container_width=True,
         )
+        st.caption("时域主图已经切成三维叠层，拖拽后可以更直观看出原始、带噪和滤波结果之间的差别。")
         st.plotly_chart(
-            line_figure(
-                "频域幅值",
+            stacked_3d_lines_figure(
+                "3D 频域幅值",
                 [
-                    {"name": "原始频谱", "x": data["freq_x"], "y": data["spectrum"], "color": "#0ea5e9", "width": 2.3},
-                    {"name": "滤波后频谱", "x": data["freq_x"], "y": data["filtered_spectrum"], "color": "#1d4ed8", "width": 2.8},
+                    {"name": "原始频谱", "x": data["freq_x"], "z": data["spectrum"], "plane": 0, "color": "#0ea5e9", "width": 4},
+                    {"name": "滤波后频谱", "x": data["freq_x"], "z": data["filtered_spectrum"], "plane": 1, "color": "#1d4ed8", "width": 5},
+                    {"name": "滤波窗口", "x": data["freq_x"], "z": [value * mask_scale for value in data["mask"]], "plane": 2, "color": "#94a3b8", "width": 3},
                 ],
                 "f",
+                "频谱层",
                 "|F(f)|",
                 height=340,
             ),
