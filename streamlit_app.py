@@ -158,8 +158,15 @@ def get_transform_data(signal: str, noise: float, cutoff: float, mode: str) -> d
 
 
 @st.cache_data(show_spinner=False)
-def get_image_data(mode: str, cutoff: int, noise: float) -> dict[str, object]:
-    return image_demo(mode, cutoff, noise)
+def get_image_data(mode: str, cutoff: int, noise: float, image_bytes: bytes | None) -> dict[str, object]:
+    return image_demo(mode, cutoff, noise, image_bytes=image_bytes)
+
+
+def get_uploaded_image_bytes() -> bytes | None:
+    uploaded_file = st.session_state.get("uploaded_image_file")
+    if uploaded_file is None:
+        return None
+    return uploaded_file.getvalue()
 
 
 def metric_card(title: str, value: str, note: str) -> None:
@@ -381,6 +388,7 @@ def current_context() -> dict[str, Any]:
         "image_mode": st.session_state.image_mode,
         "image_cutoff": int(st.session_state.image_cutoff),
         "image_noise": round(float(st.session_state.image_noise), 3),
+        "image_source": "uploaded" if get_uploaded_image_bytes() else "demo",
     }
 
 
@@ -409,6 +417,7 @@ def render_header() -> None:
 
 
 def render_overview() -> None:
+    uploaded_image_bytes = get_uploaded_image_bytes()
     series = get_series_data(st.session_state.series_terms)
     transition = get_transition_data(st.session_state.transition_period)
     transform = get_transform_data(
@@ -421,6 +430,7 @@ def render_overview() -> None:
         st.session_state.image_mode,
         int(st.session_state.image_cutoff),
         float(st.session_state.image_noise),
+        uploaded_image_bytes,
     )
 
     cols = st.columns(4)
@@ -659,6 +669,45 @@ def render_transform_tab() -> None:
         )
 
 
+def load_current_image_data() -> dict[str, object]:
+    try:
+        return get_image_data(
+            st.session_state.image_mode,
+            int(st.session_state.image_cutoff),
+            float(st.session_state.image_noise),
+            get_uploaded_image_bytes(),
+        )
+    except Exception:
+        return get_image_data(
+            st.session_state.image_mode,
+            int(st.session_state.image_cutoff),
+            float(st.session_state.image_noise),
+            None,
+        )
+
+
+def render_overview() -> None:
+    series = get_series_data(st.session_state.series_terms)
+    transition = get_transition_data(st.session_state.transition_period)
+    transform = get_transform_data(
+        st.session_state.transform_signal,
+        float(st.session_state.transform_noise),
+        float(st.session_state.transform_cutoff),
+        st.session_state.transform_mode,
+    )
+    image = load_current_image_data()
+
+    cols = st.columns(4)
+    with cols[0]:
+        metric_card("Series", f"{st.session_state.series_terms} 项", f"MSE {series['mse']}")
+    with cols[1]:
+        metric_card("Integral", f"{transition['spacing']}", "离散频率间隔")
+    with cols[2]:
+        metric_card("Transform", f"{transform['improvement']} dB", "滤波前后 SNR 提升")
+    with cols[3]:
+        metric_card("Image", f"{image['retained_ratio']}%", str(image["source_label"]))
+
+
 def render_image_tab() -> None:
     left, right = st.columns([0.34, 0.66], gap="large")
     with left:
@@ -811,6 +860,70 @@ def render_ai_tab() -> None:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
         panel_close()
+
+
+def render_image_tab() -> None:
+    left, right = st.columns([0.34, 0.66], gap="large")
+    with left:
+        panel_open()
+        st.subheader("图像频域实验")
+        uploaded_file = st.file_uploader(
+            "上传图像",
+            type=["png", "jpg", "jpeg", "webp", "bmp"],
+            key="uploaded_image_file",
+            help="上传后会替换默认示例图，并参与加噪、频谱和滤波演示。",
+        )
+
+        uploaded_image_bytes = get_uploaded_image_bytes()
+        source_label = "默认示例" if uploaded_file is None else uploaded_file.name
+        st.caption(f"当前图像：{source_label}")
+
+        st.selectbox(
+            "滤波方式",
+            options=["lowpass", "highpass"],
+            format_func=lambda value: {"lowpass": "低通降噪", "highpass": "高通边缘"}[value],
+            key="image_mode",
+        )
+        st.slider("截止半径", 6, 96, key="image_cutoff")
+        st.slider("噪声强度", 0.0, 0.32, key="image_noise")
+
+        try:
+            data = load_current_image_data()
+        except Exception as exc:
+            st.error(f"上传图像处理失败：{exc}")
+            data = get_image_data(
+                st.session_state.image_mode,
+                int(st.session_state.image_cutoff),
+                float(st.session_state.image_noise),
+                None,
+            )
+
+        st.markdown(f'<div class="caption-line">{data["summary"]}</div>', unsafe_allow_html=True)
+        st.divider()
+        metric_card("Source", str(data["source_label"]), "当前实验图像来源")
+        metric_card("Retained", f"{data['retained_ratio']}%", "保留的频域比例")
+        metric_card("MSE Before", f"{data['mse_before']}", "加噪后的误差")
+        metric_card("MSE After", f"{data['mse_after']}", "滤波后的误差")
+        metric_card("3D Peak", f"{data['surface_peak']}", "三维频谱峰值")
+        panel_close()
+
+    with right:
+        top = st.columns(2, gap="medium")
+        bottom = st.columns(2, gap="medium")
+        top[0].image(decode_data_uri(data["clean"]), caption="原始图像", use_container_width=True)
+        top[1].image(decode_data_uri(data["noisy"]), caption="加噪图像", use_container_width=True)
+        bottom[0].image(decode_data_uri(data["spectrum"]), caption="频谱视图", use_container_width=True)
+        bottom[1].image(decode_data_uri(data["filtered"]), caption="滤波结果", use_container_width=True)
+        st.caption("上传后的图像会直接进入频域分析，下面的三维曲面可以拖拽旋转查看能量分布。")
+        st.plotly_chart(
+            surface_figure(
+                "三维傅里叶频谱曲面",
+                data["surface_x"],
+                data["surface_y"],
+                data["spectrum_surface"],
+            ),
+            use_container_width=True,
+        )
 
 
 def main() -> None:

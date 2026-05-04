@@ -72,18 +72,25 @@ def _fallback_demo_image(size: int) -> np.ndarray:
     return np.clip(rgb, 0.0, 1.0)
 
 
-def _load_demo_image(size: int = IMAGE_SIZE) -> np.ndarray:
-    if not DEMO_IMAGE_PATH.exists():
-        return _fallback_demo_image(size)
-
-    with Image.open(DEMO_IMAGE_PATH) as source:
-        image = source.convert("RGB")
-
+def _prepare_image(image: Image.Image, size: int = IMAGE_SIZE) -> np.ndarray:
+    image = image.convert("RGB")
     canvas = Image.new("RGB", (size, size), color=(255, 255, 255))
     contained = ImageOps.contain(image, (size - 20, size - 20), method=RESAMPLE)
     offset = ((size - contained.width) // 2, (size - contained.height) // 2)
     canvas.paste(contained, offset)
     return np.asarray(canvas, dtype=float) / 255.0
+
+
+def _load_demo_image(size: int = IMAGE_SIZE, image_bytes: bytes | None = None) -> np.ndarray:
+    if image_bytes:
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            return _prepare_image(source, size)
+
+    if not DEMO_IMAGE_PATH.exists():
+        return _fallback_demo_image(size)
+
+    with Image.open(DEMO_IMAGE_PATH) as source:
+        return _prepare_image(source, size)
 
 
 def fourier_series_demo(terms: int = 6) -> dict[str, object]:
@@ -215,8 +222,9 @@ def image_demo(
     filter_mode: str = "lowpass",
     cutoff: int = 40,
     noise_level: float = 0.16,
+    image_bytes: bytes | None = None,
 ) -> dict[str, object]:
-    clean = _load_demo_image()
+    clean = _load_demo_image(image_bytes=image_bytes)
     size = clean.shape[0]
     rng = np.random.default_rng(11)
 
@@ -256,6 +264,7 @@ def image_demo(
         "noisy": _image_data_uri(noisy),
         "spectrum": _image_data_uri(spectrum_view),
         "filtered": _image_data_uri(filtered),
+        "source_label": "上传图像" if image_bytes else "默认示例",
         "spectrum_surface": _pack_matrix(spectrum_surface),
         "surface_x": list(range(int(spectrum_surface.shape[1]))),
         "surface_y": list(range(int(spectrum_surface.shape[0]))),

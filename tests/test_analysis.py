@@ -1,3 +1,7 @@
+import io
+
+from PIL import Image
+
 from fourier_lab.analysis import (
     fourier_series_demo,
     image_demo,
@@ -32,10 +36,25 @@ def test_image_demo_outputs_data_uris() -> None:
     data = image_demo("lowpass", 40, 0.16)
     assert data["clean"].startswith("data:image/png;base64,")
     assert data["filtered"].startswith("data:image/png;base64,")
+    assert data["source_label"] == "默认示例"
     assert data["retained_ratio"] > 0
     assert len(data["surface_x"]) == len(data["spectrum_surface"][0])
     assert len(data["surface_y"]) == len(data["spectrum_surface"])
     assert data["surface_peak"] >= 0
+
+
+def test_image_demo_accepts_uploaded_image_bytes() -> None:
+    image = Image.new("RGB", (96, 64), color=(24, 82, 190))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+
+    data = image_demo("highpass", 28, 0.08, image_bytes=buffer.getvalue())
+
+    assert data["clean"].startswith("data:image/png;base64,")
+    assert data["filtered"].startswith("data:image/png;base64,")
+    assert data["source_label"] == "上传图像"
+    assert len(data["surface_x"]) == len(data["spectrum_surface"][0])
+    assert len(data["surface_y"]) == len(data["spectrum_surface"])
 
 
 def test_quiz_questions_have_expected_shape() -> None:
