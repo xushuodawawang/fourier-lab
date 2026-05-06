@@ -360,7 +360,8 @@ def ensure_state() -> None:
         "image_noise": 0.16,
         "ai_module": "general",
         "ai_template": "自定义",
-        "ai_prompt": "",
+        "ai_prompt_input": "",
+        "clear_ai_prompt_input": False,
         "runtime_api_key": "",
         "runtime_model": "",
         "runtime_endpoint": "",
@@ -792,6 +793,9 @@ def render_quiz_tab() -> None:
 def render_ai_tab() -> None:
     left, right = st.columns([0.34, 0.66], gap="large")
     with left:
+        if st.session_state.pop("clear_ai_prompt_input", False):
+            st.session_state.ai_prompt_input = ""
+
         panel_open()
         st.subheader("AI 助教")
         st.caption("如果没有配置 `.env`，可以直接在左侧边栏的“API 配置”里输入千问 API Key。")
@@ -819,13 +823,13 @@ def render_ai_tab() -> None:
             key="ai_template",
         )
         if quick_prompt != "自定义" and st.button("填入当前问题模板", use_container_width=True):
-            st.session_state.ai_prompt = prompt_templates[quick_prompt]
+            st.session_state.ai_prompt_input = prompt_templates[quick_prompt]
 
-        st.text_area("问题", key="ai_prompt", height=140, placeholder="例如：请解释当前图像实验中低通滤波的作用。")
+        st.text_area("问题", key="ai_prompt_input", height=140, placeholder="例如：请解释当前图像实验中低通滤波的作用。")
         settings = runtime_ai_settings()
         disabled = not has_ai_credentials(settings["api_key"])
         if st.button("发送给 AI 助教", use_container_width=True, disabled=disabled):
-            question = st.session_state.ai_prompt.strip()
+            question = st.session_state.ai_prompt_input.strip()
             if not question:
                 st.warning("请先输入问题。")
             else:
@@ -845,7 +849,8 @@ def render_ai_tab() -> None:
                     except Exception as exc:  # pragma: no cover - UI defensive path
                         answer = f"出现未预期错误：{exc}"
                 st.session_state.chat_history.append({"role": "assistant", "content": answer})
-                st.session_state.ai_prompt = ""
+                st.session_state.clear_ai_prompt_input = True
+                st.rerun()
 
         if disabled:
             st.warning("还没有可用的 DASHSCOPE_API_KEY。请在侧边栏输入 Key，或在 Streamlit secrets/.env 中配置。")
